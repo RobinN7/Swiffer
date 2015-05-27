@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">Swiffer</string>
+
+    <string name="swiffer">Swiffer</string>
+    <string name="action_settings">Settings</string>
+</resources>
