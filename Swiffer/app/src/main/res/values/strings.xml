@@ -3,4 +3,6 @@
 
     <string name="swiffer">Swiffer</string>
     <string name="action_settings">Settings</string>
+    <string name="ip_adress">Adresse IP cible</string>
+    <string name="button_connect">Connect</string>
 </resources>

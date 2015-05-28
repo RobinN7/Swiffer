@@ -1,15 +1,24 @@
 package com.example.robin.swiffer;
 
+import android.os.StrictMode;
 import android.support.v7.app.ActionBarActivity;
 import android.os.Bundle;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
+import android.widget.EditText;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
 
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+
 public class MainActivity extends ActionBarActivity {
+
+    protected Socket socket;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -28,6 +37,8 @@ public class MainActivity extends ActionBarActivity {
                 }
         );
 
+        StrictMode.ThreadPolicy policy = new StrictMode.ThreadPolicy.Builder().permitAll().build();
+        StrictMode.setThreadPolicy(policy);
 
     }
 
@@ -77,6 +88,23 @@ public class MainActivity extends ActionBarActivity {
                 textView2.setText(touchStatus);
         }
     }
+
+    public void openSocket(View view) {
+        TextView tv = (TextView) findViewById(R.id.textView_debug);
+
+        EditText editText = (EditText) findViewById(R.id.edit_ip_adress);
+        String ip_adress = editText.getText().toString();
+
+        try {
+            socket = new Socket();
+            socket.connect(new InetSocketAddress(InetAddress.getByName(ip_adress), 22188));  // Appart
+            tv.setText("Socket opened !");
+        } catch(IOException | android.os.NetworkOnMainThreadException ex)
+        {
+            tv.setText("Unable to open the socket !\n" + ex.toString());
+        }
+    }
+
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
