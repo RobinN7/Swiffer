@@ -16,15 +16,19 @@
 #include <p33Fxxxx.h>      /* Includes device header file                     */
 #include <stdint.h>        /* Includes uint16_t definition                    */
 #include <stdbool.h>
-#include "ax12.h"
 #include <delay.h>
-#include <libpic30.h>
+
+#include "main.h"
 
 /******************************************************************************
  * Global Variables
  ******************************************************************************/
 byte checksumAX;
-int posAX = -5;
+volatile int posAX = -5;
+
+
+
+volatile int Delay_TimeOut_AX12 = 0;
 
 /*
  * Public global variables, which have to be declared volatile.
@@ -36,19 +40,26 @@ responseAXtype responseAX;
  * Wiring dependent functions, that you should customize
  ******************************************************************************/
 
+// du coup, le bit IOLOCK est à 0 au reset du pic,
+// donc on va pas y toucher, ça permet de tout faire marcher facile....
+
 void SetTX() {
-    __builtin_write_OSCCONL(OSCCON & 0xBF);
-    _U2RXR = 31;
-    _RP10R = 0b00101;  // RP25 = U2TX (p.167)
-    __builtin_write_OSCCONL(OSCCON | 0x40);
+    //__builtin_write_OSCCONL(0x46);
+    //__builtin_write_OSCCONL(0x57);
+    //__builtin_write_OSCCONL(OSCCON & 0xBF);
+    _U2RXR = 31;                        // disable RX
+    PIN_REMAPABLE_AX12_OUT = 0b00101;   // RP10 = U2TX (p.167)      TX => RP10
+    //__builtin_write_OSCCONL(OSCCON | 0x40);
 }
 
 void SetRX() {
-    __builtin_write_OSCCONL(OSCCON & 0xBF);
-    
-     _RP7R = 0;
-    _U2RXR = 7; // RP5 = U2RX (p.165)
-    __builtin_write_OSCCONL(OSCCON | 0x40);
+    //__builtin_write_OSCCONL(0x46);
+    //__builtin_write_OSCCONL(0x57);
+    //__builtin_write_OSCCONL(OSCCON & 0xBF);     // IOLOCK = 0
+    _U2RXR = PIN_REMAPABLE_AX12_IN;     // RP10 = U2RX (p.165)      RX <= RP10
+    PIN_REMAPABLE_AX12_OUT = 0;         // disable TX
+    // __builtin_write_OSCCONL(OSCCON | 0x40);
+
 }
 
 /******************************************************************************
@@ -92,8 +103,6 @@ void PushFooterAX() {
     SetRX();
 }
 
-int expected = 0;
-int received = 0;
 /**/
 void InterruptAX() {
     while(DataRdyUART2()) {
@@ -193,17 +202,128 @@ byte RegisterLenAX(byte address) {
     return 0; // Unexpected.
 }
 
-/* Write a value to a registry, guessing its width. */
+// old version :
+/* Write a value to a registry, guessing its width. 
 void PutAX(byte id, byte address, int value) {
     responseReadyAX = 0;
-    WriteAX(id, address, RegisterLenAX(address),
-                   (byte*)&value /* C18 and AX12 are little-endian */);
+    WriteAX(id, address, RegisterLenAX(address), (byte*)&value);
 }
+ * */
 
 /* Read a value from a registry, guessing its width. */
-void GetAX(byte id, byte address) {
+char GetAX(byte id, byte address) {
+#ifdef TEST_RECEPTION_AX12
+    char i = 0;
+    char OK = 0;
+    while (i < 10 && !OK) {
+        OK = GetAX_Check(id, address);
+        i++;
+    }
+    return (OK == 0);
+#else
     responseReadyAX = 0;
     ReadAX(id, address, RegisterLenAX(address));
+    return 0;
+#endif
 }
 
+
+char PutAX(byte id, byte address, int value) {
+#ifdef DOUBLE_COMMANDE_AX12
+    WriteAX(id, address, RegisterLenAX(address), (byte*)&value);
+    __delay_ms(7);
+    WriteAX(id, address, RegisterLenAX(address), (byte*)&value);
+    return 0;
+#else
+#ifdef TEST_RECEPTION_AX12
+    char i = 0;
+    char OK = 0;
+    while (i < 10 && !OK) {
+        OK = PutAX_Check(id, address, value);
+        i++;
+    }
+    return (OK == 0);
+#else
+    responseReadyAX = 0;
+    WriteAX(id, address, RegisterLenAX(address), (byte*)&value);
+    return 0;
+#endif
+#endif
+
+
+}
+
+
+// Write a value to a registry, guessing its width.
+// écoute ensuite la réponse, timeout à 10ms
+// si réponse pas bonne, on retente
+char PutAX_Check(byte id, byte address, int value) {
+    char Reponse_Ok = 1;
+    
+    responseReadyAX = 0;    // reset la reception
+    posAX = -5;             // reset BIS
+
+    WriteAX(id, address, RegisterLenAX(address), (byte*)&value );
+    Delay_TimeOut_AX12 = 10;
+
+    // tant que le timer 10ms a pas déclenché, et que l'on a pas reçu la réponse de l'AX
+    while (Delay_TimeOut_AX12 && !responseReadyAX);
+
+    if (responseReadyAX) {      // si on a eu une réponse, on l'analyse
+        if (responseAX.id != id) {
+            Reponse_Ok = 0;
+        }else if (    responseAX.error.input_voltage  || responseAX.error.angle_limit     ||
+                responseAX.error.overheating    || responseAX.error.range           ||
+                responseAX.error.cheksum        || responseAX.error.overload        ||
+                responseAX.error.instruction        ) {
+            Reponse_Ok = 0;
+        }
+    } else {    // si pas de réponse
+        Reponse_Ok = 0;
+    }
+
+    return Reponse_Ok;
+}
+
+char GetAX_Check (byte id, byte address)
+{
+    char Reponse_Ok = 1;
+    responseReadyAX = 0;    // reset la reception
+    posAX = -5;             // reset BIS
+    ReadAX(id, address, RegisterLenAX(address));
+
+    Delay_TimeOut_AX12 = 10;
+
+    // tant que le timer 10ms a pas d?clench?, et que l'on a pas re?u la r?ponse de l'AX
+    while (Delay_TimeOut_AX12 && !responseReadyAX);
+
+    if (responseReadyAX) {      // si on a eu une r?ponse, on l'analyse
+        if (responseAX.id != id) {
+            Reponse_Ok = 0;
+        }else if (    responseAX.error.input_voltage  || responseAX.error.angle_limit     ||
+                responseAX.error.overheating    || responseAX.error.range           ||
+                responseAX.error.cheksum        || responseAX.error.overload        ||
+                responseAX.error.instruction        ) {
+            Reponse_Ok = 0;
+        }
+    } else {    // si pas de r?ponse
+        Reponse_Ok = 0;
+    }
+
+    return Reponse_Ok;
+}
+
+
+
+int GetAX_Pos (byte id)
+{
+    char OK = 0;
+    OK = GetAX(id, AX_PRESENT_POSITION);
+
+    if (OK) {
+        return responseAX.params[0] + 256*responseAX.params[1];
+    } else {
+        return -1;
+    }
+}
 

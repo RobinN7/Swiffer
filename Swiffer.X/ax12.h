@@ -20,8 +20,18 @@
 #ifndef _AX12_H
 #define _AX12_H
 
-typedef unsigned char byte;
+#define PIN_REMAPABLE_AX12_OUT          _RP10R
+#define PIN_REMAPABLE_AX12_IN           10
+#define TRIS_PIN_REMAPABLE_AX12         _TRISB10
+#define OPEN_DRAIN_PIN_REMAPABLE_AX12   _ODCB10
 
+
+//#define DOUBLE_COMMANDE_AX12
+
+#define TEST_RECEPTION_AX12
+
+
+typedef unsigned char byte;
 
 // EEPROM Registers
 #define AX_MODEL_NUMBER             0
@@ -107,7 +117,7 @@ typedef volatile struct {
     byte id;
     byte len;
     errorAX error;
-    byte params[4]; // Could be larger.
+    byte params[10]; // Could be larger.
 } responseAXtype;
 extern responseAXtype responseAX;
 
@@ -124,17 +134,27 @@ void PushHeaderAX(byte id, byte len, byte inst);
 void PushBufferAX(byte len, byte* buf);
 void PushFooterAX(void);
 
-void      PingAX(byte id);
-void      ReadAX(byte id, byte address, byte len);
-void     WriteAX(byte id, byte address, byte len, byte* buf);
-void  RegWriteAX(byte id, byte address, byte len, byte* buf);
-void    ActionAX(byte id);
-void     ResetAX(byte id);
+void PingAX(byte id);
+void ReadAX(byte id, byte address, byte len);
+void WriteAX(byte id, byte address, byte len, byte* buf);
+void RegWriteAX(byte id, byte address, byte len, byte* buf);
+void ActionAX(byte id);
+void ResetAX(byte id);
 //void SyncWriteAX(byte id, ...);
 
-byte   RegisterLenAX(byte address);
-void  GetAX(byte id, byte address);
-void  PutAX(byte id, byte address, int value);
+byte RegisterLenAX(byte address);
+char GetAX(byte id, byte address);
+//void PutAX(byte id, byte address, int value);
+
+
+char PutAX(byte id, byte address, int value);
+
+extern volatile int Delay_TimeOut_AX12;
+
+char PutAX_Check(byte id, byte address, int value);
+char GetAX_Check (byte id, byte address);
+
+int GetAX_Pos (byte id);
 
 
 

@@ -62,10 +62,12 @@ public class MainActivity extends ActionBarActivity {
 
 
             try {
+                // Differential on left screen side
                 if (x<800)
-                    writeSocket(new byte[]{'L', (byte) (x/4)});
-                else
-                    writeSocket(new byte[]{'R', (byte) (y/4)}); // y is between 800 and 0
+                    writeSocket(new byte[]{'D', (byte) (x/4)});
+                // Speed on right screen side
+                else if (y>0 && y<800)
+                    writeSocket(new byte[]{'S', (byte) (y/4)});
             } catch(Exception ex)
             {
                 TextView tv = (TextView) findViewById(R.id.textView_debug);

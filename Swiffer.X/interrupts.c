@@ -2,24 +2,20 @@
 
 #include <stdint.h>        /* Includes uint16_t definition   */
 #include <stdbool.h>       /* Includes true/false definition */
-#include <stdio.h>
 #include <timer.h>
 #include <uart.h>
+#include <stdio.h>
 
 //#include "extern_globals.h"
-#include "user.h"
-#include <libpic30.h>
-//#include "tests.h"
-#include "motion.h"
-#include "motor.h"
-#include "user.h"
-//#include "ax12.h"
-//#include "atp-asserv.h"
-//#include "actions_ax12.h"
 
+#include "main.h"
 
-char msg[16]="";
-volatile int tics_g, tics_d;
+//debug
+#include "uart.h"
+
+volatile char Active_Delay_90 = 0;
+volatile long Delay_90 = 0;
+volatile char Delay_90_Over = 0;
 
 void InitTimers()
 {
@@ -31,7 +27,8 @@ void InitTimers()
 
     OpenUART2(UART_EN & UART_IDLE_CON & UART_IrDA_DISABLE & UART_MODE_FLOW
         & UART_UEN_00 & UART_DIS_WAKE & UART_DIS_LOOPBACK
-        & UART_DIS_ABAUD & UART_UXRX_IDLE_ONE & UART_BRGH_SIXTEEN
+        & UART_DIS_ABAUD & UART_UXRX_IDLE_ONE
+        & UART_BRGH_SIXTEEN
         & UART_NO_PAR_8BIT & UART_1STOPBIT,
           UART_INT_TX_BUF_EMPTY & UART_IrDA_POL_INV_ZERO
         & UART_SYNC_BREAK_DISABLED & UART_TX_ENABLE & UART_TX_BUF_NOT_FUL & UART_INT_RX_CHAR
@@ -41,6 +38,9 @@ void InitTimers()
     ConfigIntUART2(UART_RX_INT_PR5 & UART_RX_INT_EN
                  & UART_TX_INT_PR5 & UART_TX_INT_DIS);
 
+    TRIS_PIN_REMAPABLE_AX12 = 1;    // pin AX12 en IN pour remapable IN
+    OPEN_DRAIN_PIN_REMAPABLE_AX12 = 1; 
+    
     OpenUART1(UART_EN & UART_IDLE_CON & UART_IrDA_DISABLE & UART_MODE_FLOW
         & UART_UEN_00 & UART_DIS_WAKE & UART_DIS_LOOPBACK
         & UART_DIS_ABAUD & UART_UXRX_IDLE_ONE & UART_BRGH_SIXTEEN
@@ -51,8 +51,8 @@ void InitTimers()
           BRGVALAX12);
 
 
-    ConfigIntUART1(UART_RX_INT_PR6 & UART_RX_INT_EN
-                 & UART_TX_INT_PR6 & UART_TX_INT_DIS);
+    ConfigIntUART1(UART_RX_INT_PR7 & UART_RX_INT_EN
+                 & UART_TX_INT_PR7 & UART_TX_INT_DIS);
 
     // activation du Timer2
     OpenTimer2(T2_ON &
@@ -63,6 +63,19 @@ void InitTimers()
     // configuration des interruptions
     ConfigIntTimer2(T2_INT_PRIOR_4 & T2_INT_ON);
 
+    // activation du Timer3
+    OpenTimer3(T3_ON &
+                T3_IDLE_CON &
+                T3_GATE_OFF &
+                T3_PS_1_64 &
+                T3_SOURCE_INT, 625 ); // 625 pour 1ms
+    // configuration des interruptions
+    ConfigIntTimer3(T3_INT_PRIOR_2 & T3_INT_ON);
+    TMR3 = 312;     // pour déphasage de entre Timer2 et 3...
+
+    // info : timer 5 est utilisé par la mesure des sicks
+    // info : timer 4 est utilisé par la mesure de l'ultrason
+    
     // Ici interruption des actions des bras
     //IFS2bits.SPI2IF = 0; // Flag SPI2 Event Interrupt Priority
     //IPC8bits.SPI2IP = 2; // Priority SPI2 Event Interrupt Priority
@@ -72,24 +85,18 @@ void InitTimers()
     _U1RXR = 18;
     _RP4R = 0b0011;  // RP4 = U1TX (p.167)
 
-
+    
 
 }
 
 void Init_CN()
 {
-    _TRISA9 = 1;  // input for button
-    _TRISC3 = 1;  // input for laisse
-    _TRISC9 = 1;  // input for motor sensor
-    _TRISC8 = 1;  // input for motor sensor
-
-    _CN28IE = 1; // Enable CN28 pin for interrupt detection
-    _CN20IE = 1; // Enable CN20 pin for interrupt detection (motor sensor)
-    _CN19IE = 1; // Enable CN19 pin for interrupt detection (motor sensor)
-
-    IPC4bits.CNIP = 6; //Interrupt level 3
-    IEC1bits.CNIE = 1; // Enable CN interrupts
-    IFS1bits.CNIF = 0; // Reset CN interrupt
+    _TRISA9 = 1;            // input for button
+    _TRISC3 = 1;            // input for laisse
+    _CN28IE = 1;            // Enable CN28 pin for interrupt detection
+    IPC4bits.CNIP = 3;      //Interrupt level 3
+    IFS1bits.CNIF = 0;      // Reset CN interrupt
+    IEC1bits.CNIE = 1;      // Enable CN interrupts
 }
 
 /******************************************************************************/
@@ -129,10 +136,10 @@ void Init_CN()
 /* _T5Interrupt        _U1ErrInterrupt                                        */
 /* _INT2Interrupt      _U2ErrInterrupt                                        */
 /* _U2RXInterrupt      _DMA6Interrupt                                         */
-/* _U2TXInterrupt      _DMA7Interrupt                                         */
+/* _U2TXInterrupt      _DPIN_LAISSEMA7Interrupt                                         */
 /* _SPI2ErrInterrupt   _C1TxReqInterrupt                                      */
 /* _SPI2Interrupt      _C2TxReqInterrupt                                      */
-/* _C1RxRdyInterrupt                                                          */
+/* _C1RxRdyInterrupt     PIN_LAISSE                                                     */
 /*                                                                            */
 /* dsPIC33E Primary Interrupt Vector Names:                                   */
 /*                                                                            */
@@ -202,37 +209,69 @@ void Init_CN()
 /* TODO Add interrupt routine code here. */
 
 void __attribute__((interrupt,auto_psv)) _T2Interrupt(void) {
+    
+    
 
     // compteurs QEI gauche et droit
+    static int tics_g, tics_d;
     // commandes gauches et droite
     static float commande_g, commande_d;
 
     // rÃ©cupÃ©ration des donnÃ©es des compteurs qei gauche et droit
-   // tics_g = (int)POS1CNT;
-   // tics_d = (int)POS2CNT;
+    tics_g = (int)POS1CNT;
+    tics_d = (int)POS2CNT;
     // effectuer un pas de dÃ©placement
-   motion_step(tics_g,tics_d, &commande_g, &commande_d);
-   //printf("TicsG%d TicsD%d \n\r",tics_g,tics_d);
-   // mettre ici les pwm gauche et droit
+   //motion_step(tics_g,tics_d, &commande_g, &commande_d);
+    // mettre ici les pwm gauche et droit
    //PWM_Moteurs(commande_g, commande_d);
-   //printf("CommG%f CommD%f \n\r",commande_g,commande_d);
-    // on baisse le flag
-    _T2IF = 0;
+
+   _T2IF = 0;   // on baisse le flag
 }
 
 /*************************************************
 * TX et RX Interrupt *
 *************************************************/
-void __attribute__((interrupt, no_auto_psv)) _U2RXInterrupt(void){
+void __attribute__((__interrupt__, no_auto_psv)) _U2RXInterrupt(void){
+    InterruptAX();          // RX des AX12
     _U2RXIF = 0; // On baisse le FLAG
-//    InterruptAX();
 }
 
 void __attribute__((__interrupt__, no_auto_psv)) _U2TXInterrupt(void){
    _U2TXIF = 0; // clear TX interrupt flag
 }
 
+// Differentiel et vitesse de consigne
+// Compris tous deux entre 0 et 200 à la reception
+float diff=100;
+float speed=100;
+
+// Flag reception L ou R
+char D=0;
+char S=0;
+
 void __attribute__((interrupt, no_auto_psv)) _U1RXInterrupt(void){
+
+    // Receive first Byte
+    char b = ReadUART1();
+
+    // If byte is "$" symbol, the string can be valid
+    if (b=='D')
+        D=1;
+    else if (b=='S')
+        S=1;
+    else
+    {
+        if (D==1)
+            diff=b;
+        if (S==1)
+            speed=b;
+        D=0;
+        S=0;
+    }
+    // Passage differentiel et vitesse entre -100 et 100
+    diff-=100;
+    speed-=100;
+
     _U1RXIF = 0; // On baisse le FLAG
 }
 
@@ -244,40 +283,115 @@ void __attribute__((interrupt, no_auto_psv)) _SPI2Interrupt(void){
     led=1;
     IFS2bits.SPI2IF = 0;
 
-
+    
 }
 
 /**********************************************/
-/* CN interrupt for boutons and motor sensor  */
-/**********************************************/
-
-char lastMotorStateL=0;
-char lastMotorStateR=0;
+/* CN interrupt for boutons */
 
 void __attribute__ ((__interrupt__, no_auto_psv)) _CNInterrupt(void)
 {
-
-/*
-    if (!PIN_LAISSE)
-    {
-        SendStart(BOUTON_COULEUR);
-    }
-    else
-    {
-        __delay_ms(500);
-    }
-*/
-    if (MOT_SENSOR_PIN_L != lastMotorStateL)
-    {
-        lastMotorStateL=MOT_SENSOR_PIN_L;
-        tics_g ++;
-    }
-    if (MOT_SENSOR_PIN_R != lastMotorStateR)
-    {
-        lastMotorStateR=MOT_SENSOR_PIN_R;
-        tics_d ++;
-    }
-    //printf("TicsG%d TicsD%d \n\r",tics_g,tics_d);
-
+    uint32_t val32;
+    static uint8_t old_Pin_Laisse = 1;
+    
+    // baisse le flag puis récup des etats de pins, 
+    // si les pins rebougent durant ce laps tres court, ça redéclenchera une IT directe apres,
+    // mais avec old_ ça doit tenir
     IFS1bits.CNIF = 0; // Clear CN interrupt
+    uint8_t Etat_Pin_Laisse = PIN_LAISSE;
+    uint8_t Etat_Pin_Ultrason = PIN_ULTRASON;
+
+
+    if (old_Pin_Laisse) {
+        if (!Etat_Pin_Laisse) {
+            Active_Delay_90 = 1;
+            Delay_90 = 0;
+            SendStart();
+            old_Pin_Laisse = 0;
+        }
+    } else {
+        if (Etat_Pin_Laisse) {
+            Active_Delay_90 = 0;
+            Delay_90 = 0;
+            __delay_ms(70);
+            old_Pin_Laisse = 1;
+        }
+    }
+
+    // si Etat_Ultrason mérite que l'on s'occupe de lui
+    if (Etat_Ultrason & (U_ETAT_WAIT1 + U_ETAT_WAIT0 + U_ETAT_WAIT0_OVERSHOOT)) {
+        if (Etat_Pin_Ultrason) {
+            if (Etat_Ultrason & U_ETAT_WAIT1) {
+                //if (!count_Debug_Ultrason && Debug_Ultrason) { printf("$START_MESURE;"); }
+                TMR4 = 0;                       // restart du timer pour la mesure
+                Etat_Ultrason = U_ETAT_WAIT0;
+            }
+        } else {
+            if (Etat_Ultrason & U_ETAT_WAIT0) {     // si attente standard => récup mesure
+                PIN_CN_ULTRASON_IE = 0;     // desactivation de cette IT
+                Mesure_Timer_Ultrason = TMR4;       // 1 = 0.2us
+                //if (!count_Debug_Ultrason && Debug_Ultrason) { printf("$END_MESURE;"); }
+                // à base de vitesse du son (/2 pour l'aller-retour)  340.29 m/s
+                // => 1 coup = 34 us 
+                // pour avoir distance en mm, il faut diviser par 29.39
+                // donc multiplication par 1115 puis division par 32768 (2^15)
+                // passage obligé en 32 bits
+                val32 = 1115 * (uint32_t)(Mesure_Timer_Ultrason);
+                Mesure_Distance_Ultrason = (uint16_t)((val32 >> 15));
+                if (Sector_Ultrason) {
+                    if (Mesure_Distance_Ultrason < (ULTRASON_THRESOLD - ULTRASON_THRESOLD_TRIGGER)) {
+                        if (Ative_Motion_Free_Ultrason) {
+                            motion_free();
+                        }
+                        Sector_Ultrason = 0;            // passage en sector  occupé
+                        DetectUltrason();		// on previent la PI
+                    }
+                } else {
+                    if (Mesure_Distance_Ultrason > (ULTRASON_THRESOLD + ULTRASON_THRESOLD_TRIGGER)) {
+                        Sector_Ultrason = 1;    // passage en sector ok
+                        ReleaseUltrason();              // on previent la PI
+                    }
+                }
+                Etat_Ultrason = U_ETAT_WAIT_FOR_RESTART;   // attente fin du timer pour restart...
+            } else if (Etat_Ultrason & U_ETAT_WAIT0_OVERSHOOT) {    // si attente overshoot => fabrication d'une mesure max
+                //if (!count_Debug_Ultrason && Debug_Ultrason) { printf("$END_MESURE_OVER;"); }
+                PIN_CN_ULTRASON_IE = 0;     // desactivation de cette IT
+                Mesure_Timer_Ultrason = 0xFFFF;
+                Mesure_Distance_Ultrason = 3000;            // 3m
+                Etat_Ultrason = U_ETAT_WAIT_FOR_RESTART;    // attente fin du timer pour restart...
+            }
+        }
+    }
 }
+
+
+// every ms
+void __attribute__((interrupt,auto_psv)) _T3Interrupt(void) {
+
+    if (Delay_TimeOut_AX12) {
+        Delay_TimeOut_AX12 --;
+    }
+    
+    if (Delay_90 < 90000) {
+        if (Active_Delay_90) {
+            Delay_90 ++;
+        } else {
+            Delay_90 = 0;
+        }
+        Delay_90_Over = 0;
+    } else if (Delay_90 == 90000) {
+        Delay_90 ++;
+        SendEnd();
+        Delay_90_Over = 1;
+    } else {
+        motion_free();
+        Delay_90_Over = 1;
+        if (!Active_Delay_90) {
+            Delay_90 = 0;
+        }
+    }
+
+   _T3IF = 0;   // on baisse le flag
+}
+
+

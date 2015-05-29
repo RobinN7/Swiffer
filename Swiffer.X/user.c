@@ -6,18 +6,11 @@
 #include <stdbool.h>         /* For true/false definition                     */
 #include <timer.h>
 
-#include "user.h"          /* User funct/params, such as InitApp              */
-#include "qei.h"           /* QEI definitions for easier use                  */
-#include <libpic30.h>
-#include "motion.h"
 //#include "tests.h"
-//#include "lib_asserv/lib_asserv.h"
 //#include "atp-asserv.h"
 //#include "atp.h"
-//#include "sick.h"
-#include "motor.h"
-#include "uart.h"
 
+#include "main.h"
 
 /******************************************************************************/
 /* User Functions                                                             */
@@ -40,16 +33,35 @@ void ConfigureOscillator(void)
 
 
 // initialize all things
-void Init_All(){
+void Init_All(int callback){
     /* Configure the oscillator for the device */
     ConfigureOscillator();
     /* Initialize IO ports and peripherals */
     InitTimers();
+
     __delay_ms(500);
     Init_PWM();
-    //InitSick();
-    motion_init(); // start asserv
-    //AtpInit();
-    Init_CN();
+    Init_QEI();
 
+    //Init_ax12();
+    //InitSick_VBat();
+    //motion_init(); // start asserv
+    //Init_Ultrasons();
+    TRISAbits.TRISA9 = 1;
+    
+    TRIS_TEAM = 1;  // input for bouton jaune/vert
+    //Init_CN();
+
+    if(callback) {
+        //SendDone();
+    }
 }
+
+/*
+void writeStringToUART (const char *msg)
+{
+    while(*msg)    {
+        WriteUART1(*msg++);
+    }
+}
+*/

@@ -1,10 +1,9 @@
 /* Device header file */
 #include <xc.h>
 
-#include "motor.h"
 #include <math.h>
-#include "user.h"
-#include "tools.h"
+
+#include "main.h"
 
 void Init_PWM(void)
 {
@@ -56,8 +55,7 @@ void Init_PWM(void)
 
 
 }
-/*
-// QEI non utilis�s sur Bottox
+
 void Init_QEI(void)
 {
     // module QEI1 = Moteur Gauche
@@ -83,7 +81,7 @@ void Init_QEI(void)
     RPINR16bits.QEA2R = 23; // 23 = pin RP23
     RPINR16bits.QEB2R = 25;
 }
-*/
+
 
 // Applique un PWM en ne réglant que les Duty-Cycle (compris entre -100 et 100)
 // la fréquence du PWM est automatiquement réglée à 26.667 kHz (P1TPER=1500)

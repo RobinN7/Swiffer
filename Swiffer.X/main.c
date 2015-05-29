@@ -38,29 +38,18 @@ _FPOR(PWMPIN_ON);
 #include <stdbool.h>       // Includes true/false definition
 #include <uart.h>
 #include <math.h>
-#include "user.h"          // User funct/params, such as InitApp
-#include "qei.h"           // QEI definitions for easier use
-#include <libpic30.h>
-#include "ax12.h"
-#include "motion.h"
 
-#include "motor.h"
-#include "actions_ax12.h"
+#include "main.h"
 
+extern float diff;
+extern float speed;
 
 int main(int argc, char** argv) {
-    Init_All();
-    int pwmGauche=0, pwmDroit=0;
-    char sign=1;
+    Init_All(0);
+
     while (1) // boucle principale
     {
-        if (pwmGauche==100 || pwmGauche==-100)
-            sign*=-1;
-        PWM_Moteurs(pwmGauche, pwmGauche);
-        pwmGauche+=sign;
-        __delay_ms(5);
-
+        PWM_Moteurs((speed+diff)/2,(speed-diff)/2);
     }
 }
-
 
